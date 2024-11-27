@@ -1,0 +1,3 @@
+x1: 201 at site 2
+x2: 202 at all sites
+All other variables have their initial values.
