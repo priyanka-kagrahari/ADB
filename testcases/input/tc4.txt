@@ -1,4 +1,8 @@
-# Site Failure : Expected Output: T1 starts, T1 reads x1: 10, Site 1 fails, T1 aborts: Site 1 unavailable for write
+# Site Failure : Expected Output: 
+# T1 starts
+# T1 reads x1: 10
+# Site 1 fails
+# T1 aborts: Site 1 unavailable for write
 
 begin(T1)
 read(T1, x1)
