@@ -1,20 +1,12 @@
-# Multiple Conflicts: Expected Output:
-# T1 starts
-# T1 writes x1: 50
-# T2 starts
-# T2 writes x1: 60
-# T3 starts
-# T3 reads x1: 10
-# T1 commits
-# T2 aborts: WW conflict with T1
-# T3 aborts: RW conflict with T1
-
-begin(T1)
-write(T1, x1, 50)
+// Test 10
+// T3 will read the original value of x4 T1 will read 22 from x2
 begin(T2)
-write(T2, x1, 60)
 begin(T3)
-read(T3, x1)
-end(T1)
+W(T3,x2,22)
+W(T2,x4,44)
+R(T3,x4)
 end(T2)
 end(T3)
+begin(T1)
+R(T1,x2)
+end(T1)
