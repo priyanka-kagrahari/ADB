@@ -1,0 +1,9 @@
+# Read-Write Conflict : Expected Output: T1 starts, T1 reads x1: 10, T2 starts, T2 writes x1: 50, T2 commits, T1 aborts: RW conflict with T2
+
+begin(T1)
+read(T1, x1)
+begin(T2)
+write(T2, x1, 50)
+end(T2)
+read(T1, x1)
+end(T1)
