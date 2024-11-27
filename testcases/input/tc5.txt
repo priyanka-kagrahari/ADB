@@ -1,4 +1,10 @@
-# Site Recovery : Expected Output: T1 starts, T1 reads x2: 20, Site 2 fails, Site 2 recovers, T1 writes x2: 60, T1 commits
+# Site Recovery : Expected Output: 
+# T1 starts
+# T1 reads x2: 20
+# Site 2 fails
+# Site 2 recovers
+# T1 writes x2: 60
+# T1 commits
 
 begin(T1)
 read(T1, x2)
