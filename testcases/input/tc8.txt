@@ -1,0 +1,12 @@
+# Transactions on Replicated Variables: Expected Output: 
+# T1 starts
+# T1 reads x2: 20
+# T1 writes x2: 100
+# Site 2 fails
+# T1 commits
+
+begin(T1)
+read(T1, x2)  # x2 is replicated across all sites
+write(T1, x2, 100)
+fail(2)       # Simulate site failure
+end(T1)
