@@ -1,14 +1,14 @@
-# Concurrent Transactions on Replicated Variables: Expected Output: 
-# T1 starts
-# T1 writes x2: 50
-# T2 starts
-# T2 reads x2: 20
-# T1 commits
-# T2 aborts: RW conflict with T1
-
+// Test 9
+// T3 reads the original value of x4 (40).
+// T1 reads the original value of x2 as well (20), because that is the value
+// present when T1 began.
+begin(T3)
 begin(T1)
-write(T1, x2, 50)
 begin(T2)
-read(T2, x2)
-end(T1)
+W(T3,x2,22)
+W(T2,x4,44)
+R(T3,x4)
 end(T2)
+end(T3)
+R(T1,x2)
+end(T1)
