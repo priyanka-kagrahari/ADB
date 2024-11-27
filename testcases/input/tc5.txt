@@ -1,14 +1,12 @@
-# Site Recovery : Expected Output: 
-# T1 starts
-# T1 reads x2: 20
-# Site 2 fails
-# Site 2 recovers
-# T1 writes x2: 60
-# T1 commits
-
+// Test 5
+// T1 fails again here because it wrote to a site that failed. T2 ok.
 begin(T1)
-read(T1, x2)
+begin(T2)
+W(T1,x6,66)
 fail(2)
+W(T2,x8,88) 
+R(T2,x3)
+R(T1, x5)
+end(T2)
 recover(2)
-write(T1, x2, 60)
 end(T1)
