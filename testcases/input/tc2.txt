@@ -1,4 +1,10 @@
-# Expected Output: T1 starts, T1 writes x1: 50, T2 starts, T2 writes x1: 60, T1 commits, T2 aborts: WW conflict with T1
+# Expected Output: 
+# T1 starts
+# T1 writes x1: 50
+# T2 starts
+# T2 writes x1: 60
+# T1 commits
+# T2 aborts: WW conflict with T1
 
 begin(T1)
 write(T1, x1, 50)
