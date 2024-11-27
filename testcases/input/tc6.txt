@@ -1,15 +1,18 @@
-# Aborting a Transaction: Expected Output: 
-# T1 starts
-# T1 reads x1: 10
-# T2 starts
-# T2 writes x1: 50
-# T1 aborts: RW conflict with T2
-# T2 commits
-
+// Test 6
+// T1 ok. T2 ok. T2 reads from a recovering site, but odd variables only
+// at that site
+// At the dump, sites 3 and 4 would have their original values for x8.
+// Future reads of x8 to those sites should be refused until a committed write
+// takes place.
 begin(T1)
-read(T1, x1)
 begin(T2)
-write(T2, x1, 50)
-read(T1, x1)
+fail(3) 
+fail(4)
+R(T1,x1)
+W(T2,x8,88)
 end(T1)
+recover(4) 
+recover(3)
+R(T2,x3)
 end(T2)
+dump()
