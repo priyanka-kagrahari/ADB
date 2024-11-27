@@ -1,14 +1,13 @@
-# Expected Output: 
-# T1 starts
-# T1 writes x1: 50
-# T2 starts
-# T2 writes x1: 60
-# T1 commits
-# T2 aborts: WW conflict with T1
+// Test 2
+// No aborts happens, since all transactions use
+// serializable snapshot isolation
 
 begin(T1)
-write(T1, x1, 50)
 begin(T2)
-write(T2, x1, 60)
-end(T1)
+W(T1,x1,101) 
+R(T2,x2)
+W(T1,x2,102) 
+R(T2,x1)
+end(T1) 
 end(T2)
+dump()
