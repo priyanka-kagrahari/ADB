@@ -1,0 +1,14 @@
+# Concurrent Transactions on Replicated Variables: Expected Output: 
+# T1 starts
+# T1 writes x2: 50
+# T2 starts
+# T2 reads x2: 20
+# T1 commits
+# T2 aborts: RW conflict with T1
+
+begin(T1)
+write(T1, x2, 50)
+begin(T2)
+read(T2, x2)
+end(T1)
+end(T2)
