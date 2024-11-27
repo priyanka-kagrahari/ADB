@@ -1,4 +1,10 @@
-# Aborting a Transaction: Expected Output: T1 starts, T1 reads x1: 10, T2 starts, T2 writes x1: 50, T1 aborts: RW conflict with T2, T2 commits
+# Aborting a Transaction: Expected Output: 
+# T1 starts
+# T1 reads x1: 10
+# T2 starts
+# T2 writes x1: 50
+# T1 aborts: RW conflict with T2
+# T2 commits
 
 begin(T1)
 read(T1, x1)
