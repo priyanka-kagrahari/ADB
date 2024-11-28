@@ -10,7 +10,6 @@ def main(input_file):
         for line in f:
             line = line.strip()
             if not line:  # Skip empty lines
-                tm.time += 1  # Increment time for blank lines
                 continue
 
             # Parse and execute commands
@@ -32,6 +31,9 @@ def main(input_file):
                 tm.recover(int(args[0]))
             elif cmd == "dump":
                 tm.dump()
+
+            # Increment the logical time after each command
+            tm.time += 1
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
