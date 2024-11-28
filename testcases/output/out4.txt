@@ -1,10 +1,10 @@
-T1 begins
-T2 begins
-T1 writes x1: 512 at sites [2]
-Site 2 fails
-T2 writes x8: 88 at sites [1, 3, 4, 5, 6, 7, 8, 9, 10]
-x3: 30
- x5: 50
-T2 commits
-Site 2 recovers
-T1 aborts
+begin(T1)
+begin(T2)
+W(T1,x6,66)
+fail(2)
+W(T2,x8,88) 
+R(T2,x3)
+R(T1, x5)
+end(T2)
+recover(2)
+end(T1)

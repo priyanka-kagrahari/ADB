@@ -47,28 +47,28 @@ class TransactionManager:
         
         print(f"Transaction {txn_id} waits for {variable}")
         txn.status = "waiting"
-
+        
     def end(self, txn_id):
         txn = self.transactions[txn_id]
-        # print(f"DEBUG: Ending transaction {txn_id}")
         if txn.is_aborted():
             print(f"{txn_id} aborts")
             return
 
         should_abort = False
-        for variable, value in txn.write_set.items():
+        for variable in txn.write_set:
             var_index = int(variable.strip().lstrip('x'))
             if var_index % 2 == 1:
                 site_id = 1 + (var_index % 10)
                 if self.sites[site_id].has_failed_since(txn.start_time):
-                    # print(f"DEBUG: Aborting {txn_id} due to failure of site {site_id}")
                     should_abort = True
                     break
             else:
-                if all(site.has_failed_since(txn.start_time) for site in self.sites.values()):
-                    # print(f"DEBUG: Aborting {txn_id} due to failure of all sites")
-                    should_abort = True
-                    break
+                for site in self.sites.values():
+                    if variable in site.data and site.has_failed_since(txn.start_time):
+                        should_abort = True
+                        break
+            if should_abort:
+                break
 
         if should_abort or not self.validate_transaction(txn):
             txn.abort()
@@ -81,7 +81,6 @@ class TransactionManager:
                     if site.is_up() and variable in site.data:
                         site.write(variable, value, self.time)
             print(f"{txn_id} commits")
-
 
     def write(self, txn_id, variable, value):
         txn = self.transactions[txn_id]
