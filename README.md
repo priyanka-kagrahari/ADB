@@ -1,5 +1,5 @@
 # ADB
 Advance DB
 
-Priyanka - TC1-3-7, TC14-18
+Priyanka - TC1-3-7, TC14-17, 20
 Junaid - TC4-8, TC9-13
