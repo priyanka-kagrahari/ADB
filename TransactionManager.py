@@ -36,11 +36,17 @@ class TransactionManager:
             site_id = 1 + (var_index % 10)
             site = self.sites[site_id]
             if site.is_up():
-                value = site.get_last_committed_value(variable, txn.start_time)
-                if value is not None:
-                    print(f"{variable}: {value}")
-                    txn.add_read(variable)
-                    txn.add_accessed_site(site_id)
+                last_commit_time = site.get_last_commit_time(variable)
+                if site.was_up_continuously_between(last_commit_time, txn.start_time):
+                    value = site.get_last_committed_value(variable, txn.start_time)
+                    if value is not None:
+                        print(f"{variable}: {value}")
+                        txn.add_read(variable)
+                        txn.add_accessed_site(site_id)
+                        return
+                else:
+                    print(f"Transaction {txn_id} cannot read {variable}; site {site_id} was down during required interval")
+                    txn.abort()
                     return
             else:
                 print(f"Transaction {txn_id} cannot read {variable}; site {site_id} is down")
@@ -61,10 +67,10 @@ class TransactionManager:
                                 txn.add_accessed_site(site.id)
                                 read_successful = True
                                 break
-            if not read_successful:
-                print(f"Transaction {txn_id} cannot read {variable}; no site has it available")
-                txn.abort()
-                return
+        if not read_successful:
+            print(f"Transaction {txn_id} cannot read {variable}; no site has it available")
+            txn.abort()
+            return
 
 
     def write(self, txn_id, variable, value):
@@ -153,18 +159,64 @@ class TransactionManager:
     def validate_transaction(self, txn):
         """
         Validates a transaction to ensure it maintains serializable snapshot isolation (SSI).
-        Checks for RW and WW conflicts with previously committed transactions.
+        Detects cycles involving consecutive RW edges in the serialization graph.
         """
+        # Build edges in the serialization graph involving txn
+        serialization_edges = []
         for other_txn in self.committed_transactions:
-            if other_txn.end_time > txn.start_time:
-                if txn.check_rw_conflict(other_txn):
-                    self.debug_log(f"Transaction {txn.id} | Status: active | Action: RW conflict with {other_txn.id}")
-                    return False
-                if other_txn.check_rw_conflict(txn):
-                    self.debug_log(f"Transaction {txn.id} | Status: active | Action: WW conflict with {other_txn.id}")
-                    return False
+            # Skip transactions that ended before txn started
+            if other_txn.end_time <= txn.start_time:
+                continue
+            # Edge from other_txn to txn if other_txn writes data read by txn (RW conflict)
+            if other_txn.check_write_read_conflict(txn):
+                serialization_edges.append((other_txn.id, txn.id))
+            # Edge from txn to other_txn if txn writes data read by other_txn (WR conflict)
+            if txn.check_write_read_conflict(other_txn):
+                serialization_edges.append((txn.id, other_txn.id))
+            # Edge from txn to other_txn if txn writes data written by other_txn (WW conflict)
+            if txn.check_write_write_conflict(other_txn):
+                serialization_edges.append((txn.id, other_txn.id))
 
+        # Check for cycles involving txn
+        if self.has_cycle(serialization_edges, txn.id):
+            self.debug_log(f"Transaction {txn.id} | Status: active | Action: Cycle detected in serialization graph")
+            return False
         return True
+
+    def has_cycle(self, edges, start_txn_id):
+        from collections import defaultdict, deque
+
+        graph = defaultdict(set)
+        for src, dst in edges:
+            graph[src].add(dst)
+
+        visited = set()
+        stack = set()
+
+        def visit(txn_id):
+            if txn_id in stack:
+                return True  # Cycle detected
+            if txn_id in visited:
+                return False
+            visited.add(txn_id)
+            stack.add(txn_id)
+            for neighbor in graph[txn_id]:
+                if visit(neighbor):
+                    return True
+            stack.remove(txn_id)
+            return False
+
+        return visit(start_txn_id)
+
+    def check_write_read_conflict(self, other_txn):
+        """ Check if self writes a variable that other_txn reads """
+        return any(var in self.write_set for var in other_txn.read_set)
+    
+
+    def check_write_write_conflict(self, other_txn):
+        """ Check if self writes a variable that other_txn also writes """
+        return any(var in self.write_set for var in other_txn.write_set)
+
 
     def fail(self, site_id):
         """ Fail a site and handle any transactions that were affected by the failure """

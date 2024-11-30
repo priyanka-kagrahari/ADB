@@ -13,7 +13,15 @@ class Transaction:
         """Returns the write set as a list of (variable, value) pairs."""
         return list(self.write_set.items())  # Returns a list of (variable, value) pairs
 
+    def check_write_read_conflict(self, other_txn):
+        """ Check if self writes a variable that other_txn reads """
+        return any(var in self.write_set for var in other_txn.read_set)
+    
 
+    def check_write_write_conflict(self, other_txn):
+        """ Check if self writes a variable that other_txn also writes """
+        return any(var in self.write_set for var in other_txn.write_set)
+    
     def add_read(self, variable):
         if not self.is_aborted():
             self.read_set.add(variable)
