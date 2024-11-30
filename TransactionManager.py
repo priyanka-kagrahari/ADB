@@ -26,6 +26,7 @@ class TransactionManager:
             raise ValueError(f"Transaction {txn_id} already exists!")
         self.transactions[txn_id] = Transaction(txn_id, self.time)
         print(f"Transaction {txn_id} begins")
+        self.advance_time()  # Advance time after transaction begins
 
     def read(self, txn_id, variable):
         """ Read a variable in a transaction """
@@ -67,11 +68,11 @@ class TransactionManager:
                                 txn.add_accessed_site(site.id)
                                 read_successful = True
                                 break
-        if not read_successful:
-            print(f"Transaction {txn_id} cannot read {variable}; no site has it available")
-            txn.abort()
-            return
-
+            if not read_successful:
+                print(f"Transaction {txn_id} cannot read {variable}; no site has it available")
+                txn.abort()
+                return
+        self.advance_time()
 
     def write(self, txn_id, variable, value):
         """ Write a value to a variable in a transaction """
@@ -80,59 +81,19 @@ class TransactionManager:
         affected_sites = [site.id for site in self.sites.values() if site.is_up() and variable in site.data]
         txn.add_accessed_sites(affected_sites)
         print(f"{txn_id} writes {variable}: {value} at sites {affected_sites}")
+        self.advance_time()
 
     def end(self, txn_id):
         """ End a transaction and commit or abort it """
         txn = self.transactions[txn_id]
         self.debug_log(f"Transaction {txn.id} | Status: {txn.status} | Action: Called end()")
+        txn.set_end_time(self.time)  # Set the end time of the transaction
 
         if txn.is_aborted():
             # Transaction has already been aborted
             print(f"Transaction {txn_id} aborts")
             self.debug_log(f"Transaction {txn.id} | Status: aborted | Action: Transaction already aborted")
             return
-
-        # **Enhanced Waiting and Recovery Logic during Commit**
-        # Check if transaction should abort due to failed sites
-        should_abort = False
-        for site_id in txn.accessed_sites:
-            site = self.sites[site_id]
-            self.debug_log(f"Transaction {txn.id} accessing site {site_id} (status: {'failed' if site.is_failed() else 'up'})")
-
-            if site.is_failed():
-                # If the site failed before or during the transaction and has not recovered, abort
-                if txn.start_time <= site.recovery_time:
-                    should_abort = True
-                    self.debug_log(f"Transaction {txn.id} | Site {site_id} failed before or during the transaction; aborting.")
-                    break
-                # If the site is in recovery, we can't commit until recovery is complete
-                elif site.recovery_time is not None and site.recovery_time > txn.end_time:
-                    should_abort = True
-                    self.debug_log(f"Transaction {txn.id} | Site {site_id} in recovery (recovery_time: {site.recovery_time}); aborting.")
-                    break
-
-        if should_abort:
-            txn.abort()
-            self.debug_log(f"Transaction {txn.id} | Status: aborted | Action: Aborted due to failed/recovering site")
-            print(f"Transaction {txn_id} aborts")
-            return
-
-        # Wait for site recovery if needed
-        for site_id in txn.accessed_sites:
-            site = self.sites[site_id]
-            if site.is_failed() and site.recovery_time is None:
-                self.debug_log(f"Transaction {txn.id} | Waiting for site {site_id} to recover.")
-                while site.is_failed():
-                    time.sleep(1)  # Sleep for a short time before checking again
-
-        # Once recovery is complete for all affected sites, proceed with commit
-        for site_id in txn.accessed_sites:
-            site = self.sites[site_id]
-            if site.is_failed() or site.recovery_time is not None:
-                self.debug_log(f"Transaction {txn.id} | Site {site_id} still failed during commit; aborting.")
-                txn.abort()
-                print(f"Transaction {txn_id} aborts")
-                return
 
         # Validate and commit transaction
         if self.validate_transaction(txn):
@@ -145,7 +106,7 @@ class TransactionManager:
             # Write the committed values to the sites
             for variable, value in txn.write_set.items():
                 for site in self.sites.values():
-                    if site.is_up() and variable in site.data and site.recovery_time is None:
+                    if site.is_up() and variable in site.data:
                         self.debug_log(f"Transaction {txn.id} writing {variable}: {value} to site {site.id}")
                         site.write(variable, value, self.time)
 
@@ -159,7 +120,7 @@ class TransactionManager:
     def validate_transaction(self, txn):
         """
         Validates a transaction to ensure it maintains serializable snapshot isolation (SSI).
-        Detects cycles involving consecutive RW edges in the serialization graph.
+        Detects serialization anomalies involving the transaction.
         """
         # Build edges in the serialization graph involving txn
         serialization_edges = []
@@ -173,14 +134,33 @@ class TransactionManager:
             # Edge from txn to other_txn if txn writes data read by other_txn (WR conflict)
             if txn.check_write_read_conflict(other_txn):
                 serialization_edges.append((txn.id, other_txn.id))
-            # Edge from txn to other_txn if txn writes data written by other_txn (WW conflict)
-            if txn.check_write_write_conflict(other_txn):
-                serialization_edges.append((txn.id, other_txn.id))
+            # Edge from other_txn to txn if other_txn writes before txn writes the same variable (WW conflict)
+            if other_txn.check_write_write_conflict(txn):
+                    if txn.start_time < other_txn.start_time:
+                        # Serialization anomaly: txn must be serialized after other_txn but started before
+                        self.debug_log(f"Transaction {txn.id} | Status: active | Action: Serialization anomaly detected with transaction {other_txn.id} due to WW conflict")
+                        return False
+                    else:
+                        # Add edge from txn to other_txn
+                        serialization_edges.append((txn.id, other_txn.id))
 
         # Check for cycles involving txn
         if self.has_cycle(serialization_edges, txn.id):
             self.debug_log(f"Transaction {txn.id} | Status: active | Action: Cycle detected in serialization graph")
             return False
+
+        # Additional check for serialization anomalies due to snapshot order
+        for other_txn in self.committed_transactions:
+            if other_txn.end_time <= txn.start_time:
+                continue
+            if other_txn.start_time > txn.start_time:
+                # If txn must be serialized before other_txn due to conflicts, but started earlier, it's okay
+                continue
+            # If txn must be serialized after other_txn but started before, it may be a serialization anomaly
+            if (other_txn.id, txn.id) in serialization_edges:
+                self.debug_log(f"Transaction {txn.id} | Status: active | Action: Serialization anomaly detected with transaction {other_txn.id}")
+                return False
+
         return True
 
     def has_cycle(self, edges, start_txn_id):
@@ -207,16 +187,6 @@ class TransactionManager:
             return False
 
         return visit(start_txn_id)
-
-    def check_write_read_conflict(self, other_txn):
-        """ Check if self writes a variable that other_txn reads """
-        return any(var in self.write_set for var in other_txn.read_set)
-    
-
-    def check_write_write_conflict(self, other_txn):
-        """ Check if self writes a variable that other_txn also writes """
-        return any(var in self.write_set for var in other_txn.write_set)
-
 
     def fail(self, site_id):
         """ Fail a site and handle any transactions that were affected by the failure """
