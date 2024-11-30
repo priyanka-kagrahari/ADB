@@ -21,12 +21,18 @@ class Site:
 
     def initialize_data(self):
         """ Initialize the data for 20 variables x1 to x20 """
-        for i in range(1, 21):  # Initialize data for 20 variables x1 to x20
+        for i in range(1, 21):  # Variables x1 to x20
             variable_name = f"x{i}"
-            if self.id == 1 or i % 2 == 0 or (1 + i % 10) == self.id:
-                # Initialize the variable if it belongs to the site based on your rules
+            if i % 2 == 0:
+                # Even-indexed variables are replicated at all sites
                 self.data[variable_name] = 10 * i
-                self.commit_history[variable_name] = [(0, 10 * i)]  # Starting value is 10*i
+                self.commit_history[variable_name] = [(0, 10 * i)]
+            else:
+                # Odd-indexed variables are located at site 1 + (i % 10)
+                site_id_for_variable = 1 + (i % 10)
+                if self.id == site_id_for_variable:
+                    self.data[variable_name] = 10 * i
+                    self.commit_history[variable_name] = [(0, 10 * i)]
 
     def was_up_continuously_between(self, start_time, end_time):
         # Build a list of down intervals
