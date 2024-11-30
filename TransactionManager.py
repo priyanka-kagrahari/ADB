@@ -60,19 +60,18 @@ class TransactionManager:
                 if site.is_up() and variable in site.data:
                     last_commit_time = site.get_last_commit_time(variable)
                     if site.was_up_continuously_between(last_commit_time, txn.start_time):
-                        if site.is_variable_readable(variable, txn.start_time):
-                            value = site.get_last_committed_value(variable, txn.start_time)
-                            if value is not None:
-                                print(f"{variable}: {value}")
-                                txn.add_read(variable)
-                                txn.add_accessed_site(site.id)
-                                read_successful = True
-                                break
+                        # Ensure we're reading the correct committed value
+                        value = site.get_last_committed_value(variable, txn.start_time)
+                        if value is not None:
+                            print(f"{variable}: {value}")  # Debugging
+                            txn.add_read(variable)
+                            txn.add_accessed_site(site.id)
+                            read_successful = True
+                            break
             if not read_successful:
                 print(f"Transaction {txn_id} cannot read {variable}; no site has it available")
                 txn.abort()
-                return
-        self.advance_time()
+                self.advance_time()
 
     def write(self, txn_id, variable, value):
         """ Write a value to a variable in a transaction """
@@ -117,6 +116,23 @@ class TransactionManager:
             print(f"Transaction {txn_id} aborts")
             self.debug_log(f"Transaction {txn.id} | Status: aborted | Action: Transaction aborted during validation")
 
+
+    def execute_transaction(self, txn, sites_up):
+        """Execute the transaction on only the sites that are up when it starts."""
+        print(f"DEBUG: Transaction {txn.id} starts execution.")
+        for site_id in txn.sites:  # Sites where T2 is writing
+            # Only apply writes to sites that were up when the transaction began
+            if site_id in sites_up:
+                print(f"DEBUG: Transaction {txn.id} writing to Site {site_id}")
+                # Apply the write operation for the current site
+                for variable, value in txn.get_write_set():
+                    print(f"DEBUG: Transaction {txn.id} writes {variable} = {value} to Site {site_id}")
+                    site = self.sites[site_id]  # Get the site object
+                    site.apply_write(variable, value)
+            else:
+                print(f"DEBUG: Transaction {txn.id} skips Site {site_id}, site is down at transaction start.")
+
+
     def validate_transaction(self, txn):
         """
         Validates a transaction to ensure it maintains serializable snapshot isolation (SSI).
@@ -128,38 +144,31 @@ class TransactionManager:
             # Skip transactions that ended before txn started
             if other_txn.end_time <= txn.start_time:
                 continue
-            # Edge from other_txn to txn if other_txn writes data read by txn (RW conflict)
-            if other_txn.check_write_read_conflict(txn):
-                serialization_edges.append((other_txn.id, txn.id))
-            # Edge from txn to other_txn if txn writes data read by other_txn (WR conflict)
-            if txn.check_write_read_conflict(other_txn):
-                serialization_edges.append((txn.id, other_txn.id))
-            # Edge from other_txn to txn if other_txn writes before txn writes the same variable (WW conflict)
-            if other_txn.check_write_write_conflict(txn):
+
+            # Check RW conflict: other_txn writes a variable read by txn
+            for variable in txn.read_set:
+                if variable in other_txn.write_set:
+                    serialization_edges.append((other_txn.id, txn.id))
+
+            # Check WR conflict: txn writes a variable read by other_txn
+            for variable in other_txn.read_set:
+                if variable in txn.write_set:
+                    serialization_edges.append((txn.id, other_txn.id))
+
+            # Check WW conflict: both transactions write to the same variable
+            for variable in txn.write_set:
+                if variable in other_txn.write_set:
                     if txn.start_time < other_txn.start_time:
-                        # Serialization anomaly: txn must be serialized after other_txn but started before
-                        self.debug_log(f"Transaction {txn.id} | Status: active | Action: Serialization anomaly detected with transaction {other_txn.id} due to WW conflict")
+                        # Serialization anomaly: txn must be serialized after other_txn but started earlier
+                        self.debug_log(f"Transaction {txn.id} | Status: active | Action: Serialization anomaly detected with transaction {other_txn.id} due to WW conflict on {variable}")
                         return False
                     else:
-                        # Add edge from txn to other_txn
                         serialization_edges.append((txn.id, other_txn.id))
 
-        # Check for cycles involving txn
+        # Check for cycles in the serialization graph
         if self.has_cycle(serialization_edges, txn.id):
             self.debug_log(f"Transaction {txn.id} | Status: active | Action: Cycle detected in serialization graph")
             return False
-
-        # Additional check for serialization anomalies due to snapshot order
-        for other_txn in self.committed_transactions:
-            if other_txn.end_time <= txn.start_time:
-                continue
-            if other_txn.start_time > txn.start_time:
-                # If txn must be serialized before other_txn due to conflicts, but started earlier, it's okay
-                continue
-            # If txn must be serialized after other_txn but started before, it may be a serialization anomaly
-            if (other_txn.id, txn.id) in serialization_edges:
-                self.debug_log(f"Transaction {txn.id} | Status: active | Action: Serialization anomaly detected with transaction {other_txn.id}")
-                return False
 
         return True
 

@@ -1,5 +1,3 @@
-# site.py
-
 from collections import defaultdict
 
 class Site:
@@ -13,14 +11,13 @@ class Site:
         self.recovery_history = []  # Times when the site recovered
 
     def fail(self, fail_time):
+        """Simulate a failure of the site."""
         self.status = "down"
         self.failure_history.append(fail_time)
         print(f"Site {self.id} fails at time {fail_time}")
 
-    
-
     def initialize_data(self):
-        """ Initialize the data for 20 variables x1 to x20 """
+        """ Initialize the data for 20 variables x1 to x20. """
         for i in range(1, 21):  # Variables x1 to x20
             variable_name = f"x{i}"
             if i % 2 == 0:
@@ -35,7 +32,7 @@ class Site:
                     self.commit_history[variable_name] = [(0, 10 * i)]
 
     def was_up_continuously_between(self, start_time, end_time):
-        # Build a list of down intervals
+        """Check if the site was up continuously between start_time and end_time."""
         down_intervals = []
         failure_times = self.failure_history[:]
         recovery_times = self.recovery_history[:]
@@ -55,69 +52,82 @@ class Site:
 
         return True
 
-
     def is_failed(self):
-        """ Returns whether the site is in a failed state """
+        """Returns whether the site is in a failed state."""
         return self.status == "down"
 
-
     def get_last_commit_time(self, variable):
+        """Returns the last commit time for a variable."""
         if variable in self.commit_history and self.commit_history[variable]:
             return self.commit_history[variable][-1][0]  # Last commit time
         else:
             return 0  # If no commit history, return 0 (initial value time)
+        
+    def print_site_state(self, label):
+        """Print the state of the site at the given point in time."""
+        print(f"State of Site {self.id} at {label}:")
+        for variable, value in sorted(self.data.items()):
+            print(f"{variable}: {value}")
+        print("\n")
 
-    def was_up_continuously_between(self, start_time, end_time):
-        # If the site failed at any point between start_time and end_time, return False
-        for i in range(len(self.failure_history)):
-            fail_time = self.failure_history[i]
-            # Determine the corresponding recovery time
-            recover_time = self.recovery_history[i] if i < len(self.recovery_history) else float('inf')
-            if fail_time < end_time and recover_time > start_time:
-                # There is an overlap with the downtime and the required interval
-                return False
-        return True
-
-    def get_last_commit_time(self, variable):
-        if variable in self.commit_history and self.commit_history[variable]:
-            return self.commit_history[variable][-1][0]  # Return the last commit time
-        else:
-            return 0  # If no commit history, return 0 (initial value time)
-
-
-
-    def recover(self, current_time, committed_transactions):
+    def recover(self, current_time, committed_transactions, sites_up):
+        """Simulate the recovery of the site."""
         self.status = 'up'
         self.recovery_history.append(current_time)
-        print(f"Site {self.id} recovers at time {current_time}")
-
-        print(f"DEBUG: Site {self.id} starts recovery at time {current_time}")
-
-        # Apply all committed writes after the failure
+        print(f"DEBUG: Site {self.id} recovers at time {current_time}")
+        
+        # Apply only those committed transactions that occurred before the failure time
         for txn in committed_transactions:
-            if txn.end_time > self.failure_history[-1] and txn.end_time <= current_time:
-                print(f"DEBUG: Applying committed writes from Transaction {txn.id} to Site {self.id}")
-                for variable, value in txn.get_committed_variables():
-                    # Apply each committed write to the site
-                    self.apply_committed_write(variable, value)
-
-    def apply_committed_write(self, txn_timestamp, variable, value):
-        """ Apply the committed write for a variable after recovery """
-        if txn_timestamp > self.recovery_time:  # The txn timestamp should be after recovery time
-            if variable not in self.commit_history:
-                self.commit_history[variable] = [(txn_timestamp, value)]
+            txn_commit_time = txn.end_time
+            site_failure_time = self.failure_history[-1] if self.failure_history else -1
+            
+            if txn_commit_time <= site_failure_time:
+                # Apply writes only if the site was up when the transaction started
+                if self.id in sites_up:
+                    print(f"DEBUG: Site {self.id} applying writes from Transaction {txn.id} (commit time {txn_commit_time})")
+                    for variable, value in txn.get_committed_variables():
+                        print(f"DEBUG: Site {self.id} applying write: {variable} = {value} from Transaction {txn.id}")
+                        self.apply_committed_write(txn_commit_time, variable, value)
+                else:
+                    print(f"DEBUG: Site {self.id} skips Transaction {txn.id}, it was down when the transaction started.")
             else:
-                # Append to the commit history at the recovery point
-                self.commit_history[variable].append((txn_timestamp, value))
+                print(f"DEBUG: Skipping Transaction {txn.id} for Site {self.id}, txn commit time {txn_commit_time} is after site failure time")
+
+
+    def apply_committed_write(self, txn_end_time, variable, value):
+        """Apply the committed write for a variable after recovery."""
+        print(f"DEBUG: Attempting to apply write for {variable} = {value} at txn_end_time: {txn_end_time}, site failure history: {self.failure_history}")
+
+        # Check if transaction end time is before the failure time
+        if txn_end_time <= self.failure_history[-1]:  # Only apply writes if txn was committed before failure
+            if variable not in self.commit_history:
+                self.commit_history[variable] = [(txn_end_time, value)]
+            else:
+                self.commit_history[variable].append((txn_end_time, value))
+
             self.data[variable] = value
-            print(f"DEBUG: Site {self.id} applies committed write: {variable} = {value}")
+            print(f"DEBUG: Site {self.id} applies committed write: {variable} = {value} (txn_end_time: {txn_end_time})")
+        else:
+            print(f"DEBUG: Write {variable} = {value} ignored for Site {self.id}, txn_end_time: {txn_end_time} after failure time")
+
+
+
+    def mark_variable_unreadable(self, variable):
+        """Mark a variable as unreadable by appending a "None" entry at the recovery time."""
+        if variable in self.commit_history:
+            self.commit_history[variable].append((self.recovery_time, None))
+        else:
+            self.commit_history[variable] = [(self.recovery_time, None)]
+
+
+
 
     def is_up(self):
-        """ Return True if the site is up """
+        """Returns True if the site is up."""
         return self.status == "up"
 
     def get_last_committed_value(self, variable, timestamp):
-        """ Retrieve the last committed value of a variable at or before the given timestamp """
+        """Retrieve the last committed value of a variable at or before the given timestamp."""
         if variable not in self.commit_history:
             return 10 * int(variable.strip().lstrip('x'))  # Return default initial value
         
@@ -128,7 +138,7 @@ class Site:
         return 10 * int(variable.strip().lstrip('x'))  # Default value if no commit found
 
     def is_variable_readable(self, variable, timestamp):
-        """ Determine if the variable is readable based on its replication status and site failure state """
+        """Determine if the variable is readable based on its replication status and site failure state."""
         var_index = int(variable.strip().lstrip('x'))
         if var_index % 2 == 1:
             # Non-replicated variable: check if the site is up
@@ -139,18 +149,18 @@ class Site:
                                      self.get_last_committed_value(variable, timestamp) is not None)
 
     def has_failed_since(self, timestamp):
-        """ Returns True if the site failed after the given timestamp """
+        """Returns True if the site failed after the given timestamp."""
         return any(fail_time > timestamp for fail_time in self.failure_history)
 
     def mark_variable_unreadable(self, variable):
-        """ Mark a variable as unreadable by appending a "None" entry at the recovery time """
+        """Mark a variable as unreadable by appending a "None" entry at the recovery time."""
         if variable in self.commit_history:
             self.commit_history[variable].append((self.recovery_time, None))
         else:
             self.commit_history[variable] = [(self.recovery_time, None)]
 
     def write(self, variable, value, timestamp):
-        """ Write a value for the variable at the current time """
+        """Write a value for the variable at the current time."""
         if variable in self.commit_history:
             self.commit_history[variable].append((timestamp, value))
         else:
