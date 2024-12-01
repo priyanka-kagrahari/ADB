@@ -169,10 +169,12 @@ class TransactionManager:
             # Check WW conflict: both transactions write to the same variable
             for variable in txn.write_set:
                 if variable in other_txn.write_set:
-                    if txn.start_time < other_txn.start_time:
-                        # Serialization anomaly: txn must be serialized after other_txn but started earlier
-                        self.debug_log(f"Transaction {txn.id} | Status: active | Action: Serialization anomaly detected with transaction {other_txn.id} due to WW conflict on {variable}")
-                        return False
+                    if txn.start_time < other_txn.end_time:
+                        # Abort txn if it conflicts with an already committed transaction
+                        self.debug_log(
+                            f"Transaction {txn.id} | Status: active | Action: WW conflict with transaction {other_txn.id} on {variable}"
+                        )
+                        return False  # Abort txn
                     else:
                         serialization_edges.append((txn.id, other_txn.id))
 
@@ -182,6 +184,9 @@ class TransactionManager:
             return False
 
         return True
+
+
+
 
     def has_cycle(self, edges, start_txn_id):
         from collections import defaultdict, deque
