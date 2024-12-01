@@ -12,7 +12,7 @@ class TransactionManager:
     def recover(self, site_id):
         """ Recover a site and reapply all committed transactions after recovery """
         site = self.sites[site_id]
-        site.recover(self.time, self.committed_transactions)  # Apply committed transactions after recovery
+        site.recover(self.time, self.committed_transactions, self.get_sites_up())  # Apply committed transactions after recovery
         print(f"Site {site_id} recovers")
 
     def initialize_sites(self):
@@ -74,13 +74,17 @@ class TransactionManager:
                 self.advance_time()
 
     def write(self, txn_id, variable, value):
-        """ Write a value to a variable in a transaction """
         txn = self.transactions[txn_id]
         txn.add_write(variable, value)
-        affected_sites = [site.id for site in self.sites.values() if site.is_up() and variable in site.data]
+        affected_sites = [
+            site.id for site in self.sites.values()
+            if site.is_up() and variable in site.data and site.is_variable_writable(variable, txn.start_time)
+        ]
+        print(f"DEBUG: Write operation for {variable} = {value}, affected sites: {affected_sites}")
         txn.add_accessed_sites(affected_sites)
-        print(f"{txn_id} writes {variable}: {value} at sites {affected_sites}")
+        print(f"DEBUG: Transaction {txn_id} accessed sites: {txn.accessed_sites}")
         self.advance_time()
+
 
     def end(self, txn_id):
         """ End a transaction and commit or abort it """
@@ -105,9 +109,17 @@ class TransactionManager:
             # Write the committed values to the sites
             for variable, value in txn.write_set.items():
                 for site in self.sites.values():
-                    if site.is_up() and variable in site.data:
+                    # Pass transaction start time to check write eligibility
+                    if site.is_up() and variable in site.data and site.is_variable_writable(variable, txn.start_time):
                         self.debug_log(f"Transaction {txn.id} writing {variable}: {value} to site {site.id}")
                         site.write(variable, value, self.time)
+                    else:
+                        self.debug_log(
+                            f"Transaction {txn.id} NOT writing {variable} to site {site.id} - "
+                            f"Site up: {site.is_up()}, Variable exists: {variable in site.data}, "
+                            f"Writable: {site.is_variable_writable(variable, txn.start_time)}"
+                        )
+
 
             print(f"Transaction {txn_id} commits")
             self.debug_log(f"Transaction {txn.id} | Status: committed | Action: Transaction committed")
@@ -131,7 +143,6 @@ class TransactionManager:
                     site.apply_write(variable, value)
             else:
                 print(f"DEBUG: Transaction {txn.id} skips Site {site_id}, site is down at transaction start.")
-
 
     def validate_transaction(self, txn):
         """
@@ -214,15 +225,18 @@ class TransactionManager:
         for site_id, site in self.sites.items():
             variables = []
             for var in sorted(site.data.keys(), key=lambda x: int(x[1:])):  # Sort variables by index
-                if site_id == 1 or int(var[1:]) % 2 == 0 or (1 + int(var[1:]) % 10) == site_id:
-                    value = site.get_last_committed_value(var, self.time)
-                    variables.append(f"{var}: {value}")
-            print(f"site {site_id} - " + ", ".join(variables))
+                if site_id == 1 or int(var[1:]) % 2 == 0 or (site.is_up() and site.data[var]):
+                    variables.append(f"{var}: {site.data[var]}")
+            print(f"Site {site_id}: " + ', '.join(variables))
 
     def advance_time(self):
-        """ Advance the simulated time by one unit """
+        """ Simulate the passage of time """
         self.time += 1
 
+    def get_sites_up(self):
+        """ Return list of site IDs that are currently up """
+        return [site_id for site_id, site in self.sites.items() if site.is_up()]
+
     def debug_log(self, message):
-        """ Outputs debug messages for tracing execution """
-        print(f"DEBUG: {message}")
+        """ Print debug logs """
+        print(message)

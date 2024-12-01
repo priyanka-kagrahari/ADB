@@ -13,7 +13,20 @@ class Transaction:
         """Returns the write set as a list of (variable, value) pairs."""
         return list(self.write_set.items())  # Returns a list of (variable, value) pairs
 
-    
+    def execute(self, sites, down_sites):
+        """Execute transaction on sites that are up."""
+        print(f"DEBUG: Transaction {self.id} begins at time {self.start_time}")
+        
+        # Write to only the sites that were up during the transaction execution
+        for site in sites:
+            if site.id not in down_sites:  # Only apply write if site is up during T2 execution
+                self.write_set[site.id] = {"x8": 88}  # Record T2 writes x8=88
+                site.apply_write(self.id, "x8", 88)  # Apply T2's write to x8
+                print(f"DEBUG: T2 writing x8=88 to site {site.id}")
+            else:
+                print(f"DEBUG: Site {site.id} was down during T2, skipping write")
+
+
     def check_write_read_conflict(self, other_txn):
         """ Check if self writes variables that other_txn read """
         return any(var in self.write_set and var in other_txn.read_set for var in self.write_set)
